@@ -113,11 +113,11 @@ class Transformer:
         while True:
             pia = np.array(padded_inputs2)
             result = self.decoder([encoder_output, pia])[0]
-            inputs2.append(result)
+            inputs2.append(np.argmax(result))
             if len(inputs2) > self.model_depth:
                 inputs2.pop(0)
-            padded_inputs2 = tf.keras.preprocessing.sequence.pad_sequences(inputs2, padding="post", maxlen=self.model_depth)
-            token = self.tokenizer.detokenize_hot_encoded(result)
+            padded_inputs2 = tf.keras.preprocessing.sequence.pad_sequences([inputs2], padding="post", maxlen=self.model_depth)
+            token = self.tokenizer.detokenize_hot_encoded([result])
             ret += token
             num_tokens += 1
             if token.endswith('\n') or num_tokens >= max_tokens:

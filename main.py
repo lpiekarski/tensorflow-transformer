@@ -5,14 +5,14 @@ import os
 num_merges = 1024
 tokenization_path = f"tokenization_{num_merges}.json"
 input_path = 'input.txt'
-model_depth = 4
-embedding_size = 8
+model_depth = 16
+embedding_size = 32
 num_encoder_blocks = 8
 num_decoder_blocks = 8
 num_heads = 4
-key_dim = 4
-dense_hidden_layers = 2
-dense_hidden_layer_size = 16
+key_dim = 64
+dense_hidden_layers = 3
+dense_hidden_layer_size = 512
 
 tokenizer = Tokenizer()
 if os.path.exists(tokenization_path):
