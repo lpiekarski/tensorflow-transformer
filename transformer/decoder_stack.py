@@ -3,13 +3,22 @@ from transformer.decoder_block import DecoderBlock
 
 
 class DecoderStack(tf.keras.layers.Layer):
-    def __init__(self, num_decoder_blocks, num_heads, key_dim, dense_hidden_layers, dense_hidden_layer_size, embedding_size, model_depth, vocab_size, **kwargs):
+    def __init__(self, num_layers, d_model, num_heads, dff, dropout_rate=0.1, **kwargs):
         super().__init__(**kwargs)
+        self.d_model = d_model
+        self.num_layers = num_layers
+        self.dropout = tf.keras.layers.Dropout(dropout_rate)
         self.decoder_blocks = []
-        for i in range(num_decoder_blocks):
-            self.decoder_blocks.append(DecoderBlock(num_heads, key_dim, dense_hidden_layers, dense_hidden_layer_size, embedding_size, model_depth, vocab_size, i == num_decoder_blocks - 1))
+        for i in range(num_layers):
+            self.decoder_blocks.append(DecoderBlock(d_model, num_heads, dff, dropout_rate))
 
-    def __call__(self, x, encoder_output, *args, **kwargs):
-        for decoder_block in self.decoder_blocks:
-            x = decoder_block(x, encoder_output)
-        return x
+    def call(self, x, encoder_output, training, look_ahead_mask, padding_mask):
+        attention_weights = {}
+        x = self.dropout(x, training=training)
+
+        for i in range(self.num_layers):
+            x, self_attention_block, encoder_decoder_attention_block = self.decoder_blocks[i](x, encoder_output, training, look_ahead_mask, padding_mask)
+            attention_weights['decoder_layer{}_self_at'.format(i + 1)] = self_attention_block
+            attention_weights['decoder_layer{}_enc_dec'.format(i + 1)] = encoder_decoder_attention_block
+
+        return x, attention_weights

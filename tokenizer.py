@@ -19,7 +19,7 @@ class Tokenizer:
     def _get_stats(self, vocab):
         pairs = defaultdict(int)
         for i in range(len(vocab) - 1):
-            if vocab[i].endswith('\n'):
+            if '\n' in vocab[i] or '\n' in vocab[i + 1]:
                 continue
             pairs[vocab[i], vocab[i + 1]] += 1
         return pairs
@@ -111,6 +111,8 @@ class Tokenizer:
     def detokenize(self, token_list):
         ret = ""
         for token_id in token_list:
+            if token_id == 0:
+                continue
             ret = ret + self.tokens[token_id]
         return ret
 
