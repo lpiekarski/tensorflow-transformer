@@ -1,5 +1,5 @@
+import random
 import time
-
 import tensorflow as tf
 from transformer.custom_schedule import CustomSchedule
 from transformer.decoder_stack import DecoderStack
@@ -8,6 +8,7 @@ from transformer.positional_embedding import PositionalEmbedding
 from tokenizer import Tokenizer
 import numpy as np
 from transformer.transformer import Transformer
+import matplotlib.pyplot as plt
 
 
 class NLP:
@@ -51,34 +52,49 @@ class NLP:
         combined_mask = tf.maximum(dec_target_padding_mask, look_ahead_mask)
         return enc_padding_mask, combined_mask, dec_padding_mask
 
-    def train(self, text, epochs=20, batch_size=64, previous_lines_max_length=512):
-        previous_lines = []
-        current_line = []
-        marker_token = self.tokenizer.tokenize("\n")[0]
+    def train(self, text, epochs=20, batch_size=64, prev_tokens=512, evaluate_str=None):
+        start_token = 1
+        end_token = 2
         text_tokenized = self.tokenizer.tokenize(text)
         train_x = []
         train_y = []
-        for token_id in text_tokenized:
-            if token_id != marker_token:
-                current_line.append(token_id)
-            else:
-                current_line.append(token_id)
-                if len(previous_lines) > 0:
-                    while len(previous_lines) > previous_lines_max_length:
-                        previous_lines.pop(0)
-                    train_x.append(previous_lines.copy())
-                    train_y.append(current_line.copy())
-                previous_lines = previous_lines + current_line.copy()
-                current_line = []
+        one_token_learning = True
+        if not one_token_learning:
+            previous_lines = []
+            current_line = []
+            marker_token = self.tokenizer.tokenize("\n")[0]
+            for token_id in text_tokenized:
+                if token_id != marker_token:
+                    current_line.append(token_id)
+                else:
+                    current_line.append(token_id)
+                    if len(previous_lines) > 0:
+                        while len(previous_lines) > prev_tokens:
+                            previous_lines.pop(0)
+                        train_x.append([start_token] + previous_lines.copy() + [end_token])
+                        train_y.append([start_token] + current_line.copy() + [end_token])
+                    previous_lines = previous_lines + current_line.copy()
+                    current_line = []
+        else:
+            rolling_window = []
+            for token_id in text_tokenized:
+                if len(rolling_window) > 0:
+                    train_x.append([start_token] + rolling_window.copy() + [end_token])
+                    train_y.append([start_token, token_id, end_token])
+                rolling_window.append(token_id)
+                if len(rolling_window) > prev_tokens:
+                    rolling_window.pop(0)
 
         def make_batches(ds):
             batches = [[0, ([], [])]]
             i = 0
             batch_id = 0
             batch_i = batch_size
+            idx = list(range(0, len(ds[0])))
+            random.shuffle(idx)
             while i < len(ds[0]):
-                batches[batch_id][1][0].append(ds[0][i])
-                batches[batch_id][1][1].append(ds[1][i])
+                batches[batch_id][1][0].append(ds[0][idx[i]])
+                batches[batch_id][1][1].append(ds[1][idx[i]])
                 i += 1
                 batch_i -= 1
                 if batch_i == 0:
@@ -137,23 +153,53 @@ class NLP:
                 tar = tf.convert_to_tensor(tf.keras.preprocessing.sequence.pad_sequences(tar, padding="post"), dtype=tf.int64)
                 train_step(inp, tar)
 
-                if batch % 50 == 0:
+                if batch % 1 == 0:
                     print(
                         f'Epoch {epoch + 1} Batch {batch} Loss {self.train_loss.result():.4f} Accuracy {self.train_accuracy.result():.4f}')
-            if (epoch + 1) % 5 == 0:
+            if (epoch + 1) % 1 == 0:
                 ckpt_save_path = self.ckpt_manager.save()
                 print(f'Saving checkpoint for epoch {epoch + 1} at {ckpt_save_path}')
+            if evaluate_str is not None:
+                print('Evaluation:')
+                for string in evaluate_str:
+                    output, _, _, _ = self.evaluate(string)
+                    print('\tinput:', repr(string))
+                    print('\toutput:', repr(output))
+                    print('\tdistribution:', self.distribution(string))
             print(f'Epoch {epoch + 1} Loss {self.train_loss.result():.4f} Accuracy {self.train_accuracy.result():.4f}')
             print(f'Time taken for 1 epoch: {time.time() - start:.2f} secs\n')
 
-    def evaluate(self, text, max_length=40):
-        text = self.tokenizer.tokenize(text)
+    def distribution(self, text):
+        start = [1]
+        end = [2]
+        text = np.array(start + self.tokenizer.tokenize(text).tolist() + end)
         text_padded = [text]
 
         encoder_input = tf.convert_to_tensor(text_padded)
 
-        start = [0]#self.tokenizer.tokenize('\n')
-        end = self.tokenizer.tokenize('\n')
+        output = [start]
+        output_padded = tf.convert_to_tensor(output)
+
+        enc_padding_mask, combined_mask, dec_padding_mask = self._create_masks(encoder_input, output_padded)
+        predictions, attention_weights = self.transformer(encoder_input, output_padded, False, enc_padding_mask, combined_mask, dec_padding_mask)
+        predictions = predictions[:, -1:, :]
+        ret = []
+        for token_id in range(predictions.shape[2]):
+            ret.append({
+                'token': self.tokenizer.detokenize([token_id]),
+                'score': predictions[0][0][token_id].numpy()
+            })
+        ret.sort(key=lambda x: x['score'], reverse=True)
+        return ret
+
+    def evaluate(self, text, max_length=40):
+        start = [1]
+        end = [2]
+        text = np.array(start + self.tokenizer.tokenize(text).tolist() + end)
+        text_padded = [text]
+
+        encoder_input = tf.convert_to_tensor(text_padded)
+
         output = [start]
         output_padded = tf.convert_to_tensor(output)
 
@@ -167,5 +213,44 @@ class NLP:
             if predicted_id == end:
                 break
         text = self.tokenizer.detokenize(output[0])
+        in_tokens = []
+        translated_tokens = []
+        for token_id in encoder_input[0]:
+            in_tokens.append(self.tokenizer.detokenize([token_id]))
+        for token_id in output[0]:
+            translated_tokens.append(self.tokenizer.detokenize([token_id]))
+        return text, in_tokens, translated_tokens, attention_weights
 
-        return text, attention_weights
+    def plot_attention_head(self, in_tokens, translated_tokens, attention):
+        # The plot is of the attention when a token was generated.
+        # The model didn't generate `<START>` in the output. Skip it.
+        translated_tokens = translated_tokens[1:]
+
+        ax = plt.gca()
+        ax.matshow(attention)
+        ax.set_xticks(range(len(in_tokens)))
+        ax.set_yticks(range(len(translated_tokens)))
+
+        labels = [repr(token) for token in in_tokens]
+        ax.set_xticklabels(
+          labels, rotation=90)
+
+        labels = [repr(token) for token in translated_tokens]
+        ax.set_yticklabels(labels)
+
+    def plot_attention_weights(self, in_tokens, translated_tokens, attention_heads):
+        fig = plt.figure(figsize=(16, 8))
+
+        for h, head in enumerate(attention_heads):
+            ax = fig.add_subplot(2, 4, h + 1)
+            self.plot_attention_head(in_tokens, translated_tokens, head)
+            ax.set_xlabel('Head {}'.format(h + 1))
+
+        plt.tight_layout()
+        plt.show()
+
+    def generate_text(self, text, length=1000, verbose=0):
+        while len(text) < length:
+            eval_out, _, _, _ = self.evaluate(text)
+            text += eval_out
+        return text

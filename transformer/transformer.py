@@ -12,7 +12,7 @@ class Transformer(tf.keras.Model):
         self.tokenizer = EncoderStack(num_layers, d_model, num_heads, dff, dropout_rate)
         self.decoder = DecoderStack(num_layers, d_model, num_heads, dff, dropout_rate)
 
-        self.final_layer = tf.keras.layers.Dense(vocab_size)  # softmax?
+        self.final_layer = tf.keras.layers.Dense(vocab_size, activation='softmax')
 
     def call(self, inp, tar, training, enc_padding_mask, look_ahead_mask, dec_padding_mask):
         inp = self.positional_embed(inp)

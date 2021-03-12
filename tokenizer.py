@@ -19,7 +19,7 @@ class Tokenizer:
     def _get_stats(self, vocab):
         pairs = defaultdict(int)
         for i in range(len(vocab) - 1):
-            if '\n' in vocab[i] or '\n' in vocab[i + 1]:
+            if '\n' in vocab[i + 1] or ' ' in vocab[i + 1] or '\t' in vocab[i + 1]:
                 continue
             pairs[vocab[i], vocab[i + 1]] += 1
         return pairs
@@ -53,9 +53,15 @@ class Tokenizer:
             if not pairs:
                 break
             best = max(pairs, key=pairs.get)
+            if pairs[best] <= 1:
+                break
+            if verbose > 0:
+                print('\tCreating token:', best)
             vocab = self._merge_vocab(best, vocab)
         self.tokens = self._get_tokens(vocab)
         self.tokens.sort(key=lambda x: len(x), reverse=True)
+        self.tokens.insert(0, '<end>')
+        self.tokens.insert(0, '<start>')
         self.tokens.insert(0, '<pad>')
 
     def from_file(self, filename, num_merges=128, verbose=1):
@@ -111,14 +117,15 @@ class Tokenizer:
     def detokenize(self, token_list):
         ret = ""
         for token_id in token_list:
-            if token_id == 0:
+            if token_id == 0 or token_id == 1 or token_id == 2:
                 continue
             ret = ret + self.tokens[token_id]
         return ret
 
     def print_info(self, text):
+        ret = ''
         tokenized = self.tokenize(text)
         for token in tokenized:
             detokenized = self.detokenize([token])
-            print(repr(detokenized), token, end=', ')
-        print()
+            ret += str(repr(detokenized)) + ' ' + str(token) + ', '
+        return ret

@@ -18,7 +18,7 @@ class DecoderStack(tf.keras.layers.Layer):
 
         for i in range(self.num_layers):
             x, self_attention_block, encoder_decoder_attention_block = self.decoder_blocks[i](x, encoder_output, training, look_ahead_mask, padding_mask)
-            attention_weights['decoder_layer{}_self_at'.format(i + 1)] = self_attention_block
-            attention_weights['decoder_layer{}_enc_dec'.format(i + 1)] = encoder_decoder_attention_block
+            attention_weights['decoder_layer{}_self_attention'.format(i + 1)] = self_attention_block
+            attention_weights['decoder_layer{}_encoder_decoder_attention'.format(i + 1)] = encoder_decoder_attention_block
 
         return x, attention_weights
